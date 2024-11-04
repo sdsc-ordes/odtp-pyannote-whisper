@@ -1,0 +1,95 @@
+# This file should contain basic component information for your component.
+component-name: Component Name
+component-author: Component Author
+component-version: Component Version
+component-repository: Component Repository
+component-license: Component License
+component-type: ephemeral or interactive
+component-description: Description
+tags:
+  - tag1
+  - tag2
+
+# Information about the tools
+tools:
+  - tool-name: tool's name
+    tool-author: Tool's author
+    tool-version: Tool version
+    tool-repository: Tool's repository
+    tool-license: Tool's license
+
+# If your tool require some secrets token to be passed as ENV to the component
+# This won't be traced in MongoDB
+secrets:
+  - name: Key of the argument
+  - description: Description of the secret
+
+# If the tool requires some building arguments such as Matlab license
+build-args:
+  - name: Key of the argument
+  - description: Descriptio of the building argument
+  - secret: Bool
+
+# If applicable, ports exposed by the component
+# Include Name, Description, and Port Value for each port
+ports:
+  - name: PORT A
+    description: Description of Port A
+    port-value: XXXX
+  - name: PORT B
+    description: Description of Port B
+    port-value: YYYY
+
+# If applicable, parameters exposed by the component
+# Datatype can be str, int, float, or bool.
+parameters:
+  - name: PARAMETER A
+    default-value: DEFAULT_VALUE_A
+    datatype: DATATYPE_A
+    description: Description of Parameter A
+    parameter-bounds: # Boundaries for int and float datatype
+      - 0 # Lower bound
+      - inf # Upper bound
+    options: null
+    allow-custom-value: false # If true the user can add a custom value out of parameter-bounds, or options
+  - name: PARAMETER B
+    default-value: DEFAULT_VALUE_B
+    datatype: DATATYPE_B
+    description: Description of Parameter B
+    parameter-bounds: null
+    options: # If your string parameter is limited to a few option, please list them here. 
+      - OptionA
+      - OptionB
+      - OptionC
+    allow-custom-value: false # If true the user can add a custom value out of parameter-bounds, or options
+
+# If applicable, data-input list required by the component
+data-inputs:
+  - name: INPUT A
+    type: TYPE_A # Folder or filetype
+    path: VALUE_A  
+    description: Description of Input A
+  - name: INPUT B
+    type: TYPE_B # Folder or filetype
+    path: VALUE_B  
+    description: Description of Input B
+
+# If applicable, data-output list produced by the component
+data-output:
+  - name: OUTPUT A
+    type: TYPE_A # Folder or filetype
+    path: VALUE_A
+    description: Description of Output A
+  - name: OUTPUT B
+    type: TYPE_B # Folder or filetype
+    path: VALUE_B
+    description: Description of Output B
+
+# If applicable, path to schemas to perform semantic validation.
+# Still under development. Ignore.
+schema-input: PATH_TO_INPUT_SCHEMA
+schema-output: PATH_TO_OUTPUT_SCHEMA
+
+# If applicable, define devices needed such as GPU.
+devices:
+  gpu: Bool
