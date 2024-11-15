@@ -1,31 +1,8 @@
-FROM ubuntu:22.04
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
 
-RUN apt update
-RUN apt install python3.10 python3-pip -y 
+RUN apt-get update && apt-get install -y apt-utils
 
-##################################################
-# Ubuntu setup
-##################################################
-
-RUN  apt-get update \
-  && apt-get install -y wget \
-  && rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update && apt-get -y upgrade \
-  && apt-get install -y --no-install-recommends \
-    unzip \
-    nano \
-    git \ 
-    g++ \
-    gcc \
-    htop \
-    zip \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-##################################################
-# ODTP setup
-##################################################
+RUN apt-get install -y python3.11 python3.11-venv python3-pip
 
 COPY odtp-component-client/requirements.txt /tmp/odtp.requirements.txt
 RUN pip install -r /tmp/odtp.requirements.txt
@@ -38,6 +15,17 @@ RUN pip install -r /tmp/odtp.requirements.txt
 # Installing dependecies from the app
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
+
+# Dependencies
+
+RUN apt-get update && \
+    apt-get install -y zip git && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# ffmpeg
+COPY --link --from=mwader/static-ffmpeg:6.1.1 /ffmpeg /usr/local/bin/
+COPY --link --from=mwader/static-ffmpeg:6.1.1 /ffprobe /usr/local/bin/
 
 
 ######################################################################
@@ -69,5 +57,13 @@ COPY ./odtp-component-client /odtp/odtp-component-client
 
 COPY ./app /odtp/odtp-app
 WORKDIR /odtp
+
+##################################################
+# Fix for end of the line issue on Windows
+##################################################
+
+RUN sed -i 's/\r$//' /odtp/odtp-component-client/odtp-app.sh
+RUN sed -i 's/\r$//' /odtp/odtp-component-client/startup.sh
+RUN sed -i 's/\r$//' /odtp/odtp-app/app.sh
 
 ENTRYPOINT ["bash", "/odtp/odtp-component-client/startup.sh"]

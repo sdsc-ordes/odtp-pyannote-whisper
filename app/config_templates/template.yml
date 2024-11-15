@@ -1,3 +1,0 @@
-# Use the variable name between squared brackets to replace values in the template. 
-constant_string: /odtp/odtp-workdir/cache
-value_to_replace: [variable_key]
