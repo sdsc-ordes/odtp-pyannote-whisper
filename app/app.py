@@ -321,7 +321,8 @@ def main(args):
     if args.language:
         whisper_options["language"] = args.language
     writer_options = {"max_line_width":55, "max_line_count":2, "word_timestamps": False}
-    print("Process diarized blocks")
+    if args.verbose=="True":
+        print("Process diarized blocks")
     
     # Group consecutive segments of the same speaker
     grouped_segments = []
@@ -330,9 +331,11 @@ def main(args):
     current_end = None
 
     for turn, _, speaker in diarization.itertracks(yield_label=True):
-        print(speaker)
+        if args.verbose=="True":
+            print(speaker)
         if turn.end - turn.start < 0.5:  # Suppress short utterances (pyannote artifact)
-            print(f"start={turn.start:.1f}s stop={turn.end:.1f}s IGNORED")
+            if args.verbose=="True":
+                print(f"start={turn.start:.1f}s stop={turn.end:.1f}s IGNORED")
             continue
 
         if speaker == current_speaker:
@@ -354,7 +357,8 @@ def main(args):
         clip_audio(args.input_file, sample_rate, start, end, clip_path)
         result = model.transcribe(start=start, end=end, options=whisper_options)
         language = result['language']
-        print(f"start={start:.1f}s stop={end:.1f}s lang={language} {speaker}")
+        if args.verbose=="True":
+            print(f"start={start:.1f}s stop={end:.1f}s lang={language} {speaker}")
         writer(result, args.output_file, speaker, start, writer_options)
         writer_json(generate_segments(result['segments'],  speaker, language), args.output_json_file)
     writer_json.finalize()
@@ -369,6 +373,7 @@ if __name__ == '__main__':
     parser.add_argument('--input-file', type=str, required=True, help="Input audio file")
     parser.add_argument('--output-file', type=str, required=True, help="Output file for the results (SRT or VTT)")
     parser.add_argument('--output-json-file', type=str, required=True, help="Output file for the results (SRT or VTT)")
+    parser.add_argument('--verbose', type=str, required=False, help="Printing status")
 
     args = parser.parse_args()
     main(args)

@@ -66,4 +66,7 @@ RUN sed -i 's/\r$//' /odtp/odtp-component-client/odtp-app.sh
 RUN sed -i 's/\r$//' /odtp/odtp-component-client/startup.sh
 RUN sed -i 's/\r$//' /odtp/odtp-app/app.sh
 
-ENTRYPOINT ["bash", "/odtp/odtp-component-client/startup.sh"]
+#ENTRYPOINT ["bash", "/odtp/odtp-component-client/startup.sh"]
+ENTRYPOINT [ "python3", "/odtp/odtp-app/gradio_app.py" ]
+
+# Create command to run the app that goes to an entrypoint basically the startup mode. Also I in order to work with an API I need some interface with an s3 to make it work?

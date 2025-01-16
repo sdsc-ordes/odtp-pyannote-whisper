@@ -3,8 +3,8 @@ import tempfile
 import os
 import shutil
 import subprocess
-from pathlib import Path
-import io
+import threading
+import time
 
 def create_temp_structure():
     """Create temporary ODTP folder structure"""
@@ -12,6 +12,11 @@ def create_temp_structure():
     os.makedirs(os.path.join(temp_dir, "odtp-input"))
     os.makedirs(os.path.join(temp_dir, "odtp-output"))
     return temp_dir
+
+def remove_later(path, delay):
+    time.sleep(delay)
+    if os.path.exists(path):
+        shutil.rmtree(path, ignore_errors=True)
 
 def cleanup_temp(temp_dir):
     """Remove temporary folder structure"""
@@ -22,54 +27,64 @@ def process_audio(audio_file, model, task, language, hf_token):
     # Create temp structure
     temp_dir = create_temp_structure()
     
-    try:
-        # Copy input file
-        input_path = os.path.join(temp_dir, "odtp-input", "input.wav")
-        shutil.copy2(audio_file, input_path)
+    start_time = time.time()
+    print(f"Processing started at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}")
+    
+    # Copy input file
+    input_path = os.path.join(temp_dir, "odtp-input", "input.wav")
+    shutil.copy2(audio_file, input_path)
+
+    # Prepare output paths #TODO: Add uuid to output file names
+    output_base = audio_file.split("/")[-1].replace(".wav", "")
+    output_srt = os.path.join(temp_dir, "odtp-output", #temp_dir
+        f"{output_base}_{task}.srt")
+    output_json = os.path.join(temp_dir, "odtp-output",
+        f"{output_base}_{task}.json")
+    
+    # Use HF_TOKEN from environment if not provided
+    if not hf_token:
+        hf_token = os.getenv("HF_TOKEN")
+        if not hf_token:
+            raise ValueError("Hugging Face token is required but not provided.")
+    
+    # Build command
+    cmd = [
+        "python3", "/odtp/odtp-app/app.py",
+        "--model", model,
+        "--quantize",
+        "--hf-token", hf_token,
+        "--task", task,
+        "--input-file", input_path,
+        "--output-file", output_srt,
+        "--output-json-file", output_json,
+        "--verbose", "False"
+    ]
+    
+    if language != "auto":
+        cmd.extend(["--language", language])
         
-        # Prepare output paths
-        output_base = "output"
-        output_srt = os.path.join(temp_dir, "odtp-output", 
-            f"{output_base}.{'translate.' if task == 'translate' else ''}srt")
-        output_json = os.path.join(temp_dir, "odtp-output",
-            f"{output_base}.{'translate.' if task == 'translate' else ''}json")
-        
-        # Build command
-        cmd = [
-            "python3", "/odtp/odtp-app/app.py",
-            "--model", model,
-            "--quantize",
-            "--hf-token", hf_token,
-            "--task", task,
-            "--input-file", input_path,
-            "--output-file", output_srt,
-            "--output-json-file", output_json
-        ]
-        
-        if language != "auto":
-            cmd.extend(["--language", language])
-            
-        # Run transcription
-        subprocess.run(cmd, check=True)
-        
-        # Read results
-        with open(output_srt, 'r', encoding='utf-8') as f:
-            srt_content = f.read()
-        with open(output_json, 'r', encoding='utf-8') as f:
-            json_content = f.read()
-        
-        # Create BytesIO objects for downloads
-        srt_bytes = io.BytesIO(srt_content.encode('utf-8'))
-        srt_bytes.name = "output.srt"
-        json_bytes = io.BytesIO(json_content.encode('utf-8'))
-        json_bytes.name = "output.json"
-        
-        # Return contents and BytesIO objects
-        return srt_content, json_content, srt_bytes, json_bytes
-        
-    finally:
-        # Cleanup
-        cleanup_temp(temp_dir)
+    # Run transcription
+    subprocess.run(cmd, check=True)
+    
+    # Read results
+    with open(output_srt, 'r', encoding='utf-8') as f:
+        srt_content = f.read()
+    with open(output_json, 'r', encoding='utf-8') as f:
+        json_content = f.read()
+
+    # Code to delete files after 300 seconds
+    threading.Thread(target=remove_later, args=(temp_dir, 300), daemon=True).start()
+
+    end_time = time.time()
+    print(f"Processing ended at: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_time))}")
+
+    total_duration = end_time - start_time
+    hours, remainder = divmod(total_duration, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    total_duration_str = f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
+    print(f"Total processing time: {total_duration_str}")
+
+    return total_duration_str, srt_content, json_content, output_srt, output_json
 
 # Define Gradio interface
 with gr.Blocks() as demo:
@@ -103,6 +118,9 @@ with gr.Blocks() as demo:
             submit_btn = gr.Button("Process Audio")
             
         with gr.Column():
+            information = gr.Text(
+                label="Information"
+            )
             srt_output = gr.Textbox(
                 label="SRT Output",
                 lines=10
@@ -113,16 +131,18 @@ with gr.Blocks() as demo:
             )
             # Add download buttons
             srt_download = gr.File(
-                label="Download SRT File"
+                label="Download SRT File", 
+                type="binary"
             )
             json_download = gr.File(
-                label="Download JSON File"
+                label="Download JSON File",
+                type="binary"
             )
     
     submit_btn.click(
         fn=process_audio,
         inputs=[audio_input, model, task, language, hf_token],
-        outputs=[srt_output, json_output, srt_download, json_download]
+        outputs=[information, srt_output, json_output, srt_download, json_download]
     )
 
 if __name__ == "__main__":
@@ -133,3 +153,7 @@ if __name__ == "__main__":
         show_error=True,          # Show detailed error messages
         debug=True               # Enable debug mode for development
     )
+
+
+
+# TODO: Slow printing on the command.
