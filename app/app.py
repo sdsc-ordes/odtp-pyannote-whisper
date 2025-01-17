@@ -26,7 +26,7 @@ import createpdf
 import paragraphsCreator
 
 from pydub import AudioSegment
-from pytube import YouTube
+import yt_dlp
 
 
 
@@ -448,32 +448,39 @@ def convert_mpx_to_wav(file_path):
     return wav_file_path
 
     
-def download_youtube_video(url, output_path='downloads'):
-    if url.startswith('http://') or url.startswith('https://'):
-        yt = YouTube(url)
-        video = yt.streams.filter(only_audio=True).first()
-        if not os.path.exists(output_path):
-            os.makedirs(output_path)
-        output_file = video.download(output_path)
+def download_youtube_video(url, output_path='/tmp'):
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'wav',
+            'preferredquality': '192',
+        }],
+    }
+
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info_dict = ydl.extract_info(url, download=True)
+        output_file = ydl.prepare_filename(info_dict)
+
         base, ext = os.path.splitext(output_file)
-        new_file = base + '.mp4'
-        os.rename(output_file, new_file)
+        new_file = base + '.wav'
+        print(new_file)
         return new_file
-    else:
-        raise ValueError("The provided URL is not a valid HTTP link")
 
 
 
 def main(args):
-    diarization, _, sample_rate = diarize_audio(args.hf_token, args.input_file)
-
     # Really dirty way to handle youtube links
     # We should refactor this to be more robust
     # with different input sources
-    possible_link = args.input_file.replace("/odtp/odtp-input/")  
+    possible_link = args.input_file.replace("/odtp/odtp-input/", "")  
     if possible_link.startswith('http://') or possible_link.startswith('https://'):
-        file_path = download_youtube_video(args.input_file, output_path=os.path.dirname(args.output_file))
-        file_path = convert_mpx_to_wav(file_path)
+        file_path = download_youtube_video(possible_link, output_path=os.path.dirname(args.output_file))
+        #file_path = convert_mpx_to_wav(file_path)
     elif args.input_file.lower().endswith('.mp3'):
         file_path = convert_mpx_to_wav(args.input_file)
     elif args.input_file.lower().endswith('.wav'):
@@ -482,6 +489,8 @@ def main(args):
         file_path = convert_mpx_to_wav(args.input_file)
     else:
         raise ValueError("Input file must be an MP3, WAV or MP4 file")
+    
+    diarization, _, sample_rate = diarize_audio(args.hf_token, file_path)
 
     # Create the correct ASR facade
     asr_model = create_asr_facade(args.model, quantize=args.quantize)
@@ -538,7 +547,7 @@ def main(args):
     # Process each grouped segment
     for start, end, speaker in grouped_segments:
         clip_path = f"/tmp/speaker_{speaker}_start_{start:.1f}_end_{end:.1f}.wav"
-        clip_audio(args.input_file, sample_rate, start, end, clip_path)
+        clip_audio(file_path, sample_rate, start, end, clip_path)
         
         # Important: we call asr_model instead of model
         result = asr_model.transcribe(start=start, end=end, options=whisper_options)

@@ -10,4 +10,4 @@ gradio==5.5.0
 numpy==1.24.4
 md2pdf==1.0.1
 transformers==4.48.0
-pytube
+yt-dlp
