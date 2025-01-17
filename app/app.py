@@ -467,8 +467,11 @@ def download_youtube_video(url, output_path='downloads'):
 def main(args):
     diarization, _, sample_rate = diarize_audio(args.hf_token, args.input_file)
 
-
-    if args.input_file.startswith('http://') or args.input_file.startswith('https://'):
+    # Really dirty way to handle youtube links
+    # We should refactor this to be more robust
+    # with different input sources
+    possible_link = args.input_file.replace("/odtp/odtp-input/")  
+    if possible_link.startswith('http://') or possible_link.startswith('https://'):
         file_path = download_youtube_video(args.input_file, output_path=os.path.dirname(args.output_file))
         file_path = convert_mpx_to_wav(file_path)
     elif args.input_file.lower().endswith('.mp3'):
@@ -482,7 +485,7 @@ def main(args):
 
     # Create the correct ASR facade
     asr_model = create_asr_facade(args.model, quantize=args.quantize)
-    asr_model.load_audio(args.input_file)
+    asr_model.load_audio(file_path)
     
     writer = WriteSRTIncremental() 
     writer_json = SegmentsJSONWriter()
