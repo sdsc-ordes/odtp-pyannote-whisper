@@ -1,19 +1,186 @@
-import os
-import argparse
-from typing import Any, Optional, TextIO, List
-from pyannote.audio import Pipeline, Audio
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional, TextIO, List
 import whisper
-from whisper.utils import WriteSRT, WriteVTT
 from whisper import Whisper
 import torch
-from math import ceil, floor
+from math import floor, ceil
+
+from transformers import pipeline
+import numpy as np
+import librosa
+import torch
+from math import floor, ceil
+
+import os
+import argparse
+from pyannote.audio import Pipeline, Audio
+from whisper.utils import WriteSRT, WriteVTT
+
 import soundfile as sf
 import librosa
 import json
 from dataclasses import dataclass, asdict
-from typing import List
 from jsonschema import validate, ValidationError
 
+import createpdf
+import paragraphsCreator
+
+from pydub import AudioSegment
+from pytube import YouTube
+
+
+
+
+
+class ASRFacade(ABC):
+    """Abstract base class to define an interface for transcription."""
+
+    @abstractmethod
+    def load_audio(self, file_path: str):
+        pass
+
+    @abstractmethod
+    def transcribe(
+        self,
+        start: float,
+        end: float,
+        options: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Transcribe a portion of audio from start to end time in seconds."""
+        pass
+
+
+
+
+class WhisperFacade(ASRFacade):
+    wmodel: Whisper
+    audio: Any  # The loaded audio array from Whisper
+
+    def __init__(self, model: str, *, quantize=False) -> None:
+        print("Initialize Whisper")
+        whisper_model = whisper.load_model(model)
+        if quantize:
+            print("Quantize")
+            DTYPE = torch.qint8
+            qmodel: Whisper = torch.quantization.quantize_dynamic(
+                whisper_model, {torch.nn.Linear}, dtype=DTYPE
+            )
+            del whisper_model
+            self.wmodel = qmodel
+        else:
+            self.wmodel = whisper_model
+
+    def load_audio(self, file_path: str):
+        self.audio = whisper.load_audio(file_path)
+
+    def _set_timing_for(self, segment: dict[str, float], offset: float) -> None:
+        # Keep this logic the same
+        s = segment
+        s['start'] += offset 
+        s['end']   += offset
+        if 'words' in s:
+            for w in s['words']:
+                w['start'] += offset
+                w['end'] += offset
+
+    def transcribe(
+        self,
+        start: float,
+        end: float,
+        options: dict[str, Any]
+    ) -> dict[str, Any]:
+        SAMPLE_RATE = 16_000
+        start_index = floor(start * SAMPLE_RATE)
+        end_index   = ceil(end * SAMPLE_RATE)
+
+        audio_segment = self.audio[start_index:end_index]
+        result = whisper.transcribe(self.wmodel, audio_segment, **options)
+
+        for s in result['segments']:
+            self._set_timing_for(segment=s, offset=start)
+
+        return result
+
+
+class TransformersFacade(ASRFacade):
+    """Use a Hugging Face ASR pipeline instead of Whisper."""
+
+    def __init__(self, model_name: str):
+        print(f"Initialize Transformers pipeline with model {model_name}")
+        self.asr_pipeline = pipeline("automatic-speech-recognition", model=model_name)
+        self.sr = 16000
+        self.audio_data = None  # We'll store the loaded waveform here
+
+    def load_audio(self, file_path: str):
+        # We'll load audio into a single waveform at 16 kHz
+        print(f"Loading audio for Transformers from {file_path}")
+        waveform, sr = librosa.load(file_path, sr=self.sr, mono=True)
+        self.audio_data = waveform
+        print(f"Audio loaded: shape={waveform.shape}, sample_rate={sr}")
+
+    def transcribe(
+        self,
+        start: float,
+        end: float,
+        options: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        We want to return a structure with 'segments' just like Whisper does.
+        We'll treat the entire chunk as a single forward pass to the pipeline.
+        If you prefer more advanced chunking or word-level timestamps, you can expand this.
+        """
+        start_sample = floor(start * self.sr)
+        end_sample   = ceil(end * self.sr)
+        audio_segment = self.audio_data[start_sample:end_sample]
+
+        # The pipeline can handle direct numpy arrays.
+        # Some HF pipelines let you pass 'return_timestamps=True' in generate(), but that may vary by model.
+        # We'll do a straightforward approach here:
+        transcription = self.asr_pipeline(audio_segment)#, sampling_rate=self.sr)
+
+        # We want to unify the output structure with whisper-like dict.
+        # Example result for consistency:
+        result = {
+            "language": "ca",  # or fetch from pipeline if available
+            "segments": [
+                {
+                    "id": 0,
+                    "start": start,
+                    "end": end,
+                    "text": transcription["text"],
+                    # If you want words/tokens, you can parse them here if your model supports it
+                }
+            ]
+        }
+        return result
+
+def create_asr_facade(model_name: str, quantize: bool = False) -> ASRFacade:
+    """Factory function to return either a Whisper or Transformers facade."""
+    # Example: if user requests 'base-ca', we switch to Transformers
+    if model_name in ['tiny.en', 
+                        'tiny', 
+                        'base.en', 
+                        'base', 
+                        'small.en', 
+                        'small', 
+                        'medium.en', 
+                        'medium', 
+                        'large-v1', 
+                        'large-v2', 
+                        'large-v3', 
+                        'large', 
+                        'large-v3-turbo', 
+                        'turbo']:
+        return WhisperFacade(model=model_name, quantize=quantize)
+    else:
+        print(f"Trying to use Transformers model from {model_name}")
+        return TransformersFacade(model_name=model_name)
+        
+    
+
+
+
+#############################################################################
 
 @dataclass
 class Segment:
@@ -229,9 +396,12 @@ class SegmentsJSONWriter(AppendResultsMixin):
             else:
                 f.write(',\n')
             for idx, segment in enumerate(segments):
-                if idx > 0:
-                    f.write(',\n')
-                json.dump(asdict(segment), f, ensure_ascii=False, indent=2)
+                if segment:  # Check if the segment is not empty
+                    if idx > 0:
+                        f.write(',\n')
+
+                    segment.text = segment.text.strip()
+                    json.dump(asdict(segment), f, ensure_ascii=False, indent=2)
             self.first_call = False
 
     def finalize(self):
@@ -243,57 +413,6 @@ class SegmentsJSONWriter(AppendResultsMixin):
     def close(self):
         with open(self.output_path, 'a', encoding='utf-8') as f:
             f.write('\n]}\n')
-
-class WhisperFacade:
-    wmodel: Whisper
-
-    def __init__(self, model:str, *, quantize=False) -> None:
-        """Load the Whisper model and optionally quantize."""
-        print("Initialize whisper")
-        whisper_model = whisper.load_model(model)
-        if quantize:
-            print("Quantize")
-            DTYPE = torch.qint8
-            qmodel: Whisper = torch.quantization.quantize_dynamic(
-                        whisper_model, {torch.nn.Linear}, dtype=DTYPE)
-            del whisper_model
-            self.wmodel = qmodel
-        else:
-            self.wmodel = whisper_model
-
-    def _set_timing_for(self, segment: dict[str, float],  # simplified typing
-                        offset: float) -> None:
-        """For speech fragments in different parts of an audio file, patch the 
-        whisper segment and word timing using the offset (typically the diarization offset)
-        in seconds. This makes the timing accurate for subtitles when multiple 
-        calls to whisper are used for various parts of the audio.
-        """
-        s = segment
-        s['start'] += offset 
-        s['end']   += offset
-        # Update word start/stop times, if present
-        if 'words' in s:
-            w: dict[str, float] # simplified typing
-            for w in s['words']: # type: ignore
-                w['start'] += offset
-                w['end'] += offset
-
-    def load_audio(self, file_path: str):
-        self.audio = whisper.load_audio(file_path)
-    
-    def transcribe(self, *, start: float, end: float, options: dict[str, Any] ) -> dict[str, Any]:
-        """Transcribe from start time to end time (both in seconds)."""
-        SAMPLE_RATE = 16_000 # 16kHz audio
-        start_index = floor(start * SAMPLE_RATE)
-        end_index = ceil(end * SAMPLE_RATE)
-        audio_segment = self.audio[start_index:end_index]
-        result = whisper.transcribe(self.wmodel, audio_segment, **options)
-        #
-        segments = result['segments']
-        s: dict[str, float] # simplified typing
-        for s in segments: # type: ignore
-            self._set_timing_for(segment=s, offset=start)
-        return result
 
 def clip_audio(audio_file_path, sample_rate, start, end, output_path):
     # Ensure the output directory exists
@@ -309,45 +428,107 @@ def clip_audio(audio_file_path, sample_rate, start, end, output_path):
     # Write the audio segment to the output path
     sf.write(output_path, waveform[start_sample:end_sample], sr, format='WAV')
 
+def convert_mpx_to_wav(file_path):
+    if file_path.lower().endswith('.mp3'):
+        # Load the MP3 file
+        audio = AudioSegment.from_mp3(file_path)
+
+    elif file_path.lower().endswith('.mp4'):
+        audio = AudioSegment.from_mp4(file_path)
+
+    else:
+        raise ValueError("Input file must be an MP3 or MP4 file")
+        
+    # Define the output path
+    wav_file_path = os.path.splitext(file_path)[0] + '.wav'
+    
+    # Export as WAV
+    audio.export(wav_file_path, format='wav')
+    
+    return wav_file_path
+
+    
+def download_youtube_video(url, output_path='downloads'):
+    if url.startswith('http://') or url.startswith('https://'):
+        yt = YouTube(url)
+        video = yt.streams.filter(only_audio=True).first()
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
+        output_file = video.download(output_path)
+        base, ext = os.path.splitext(output_file)
+        new_file = base + '.mp4'
+        os.rename(output_file, new_file)
+        return new_file
+    else:
+        raise ValueError("The provided URL is not a valid HTTP link")
+
+
+
 def main(args):
     diarization, _, sample_rate = diarize_audio(args.hf_token, args.input_file)
-    model = WhisperFacade(model=args.model, quantize=args.quantize)
-    model.load_audio(args.input_file)
-    #
+
+
+    if args.input_file.startswith('http://') or args.input_file.startswith('https://'):
+        file_path = download_youtube_video(args.input_file, output_path=os.path.dirname(args.output_file))
+        file_path = convert_mpx_to_wav(file_path)
+    elif args.input_file.lower().endswith('.mp3'):
+        file_path = convert_mpx_to_wav(args.input_file)
+    elif args.input_file.lower().endswith('.wav'):
+        file_path = args.input_file
+    elif args.input_file.lower().endswith('.mp4'):
+        file_path = convert_mpx_to_wav(args.input_file)
+    else:
+        raise ValueError("Input file must be an MP3, WAV or MP4 file")
+
+    # Create the correct ASR facade
+    asr_model = create_asr_facade(args.model, quantize=args.quantize)
+    asr_model.load_audio(args.input_file)
+    
     writer = WriteSRTIncremental() 
     writer_json = SegmentsJSONWriter()
-    whisper_options = {"verbose": None, "word_timestamps": False, 
-                       "task": args.task, "suppress_tokens": ""}
-    if args.language:
-        whisper_options["language"] = args.language
-    writer_options = {"max_line_width":55, "max_line_count":2, "word_timestamps": False}
-    if args.verbose=="True":
-        print("Process diarized blocks")
     
-    # Group consecutive segments of the same speaker
+    # Whisper-like transcription options
+    whisper_options = {
+        "verbose": None,
+        "word_timestamps": False,
+        "task": args.task,
+        "suppress_tokens": ""
+    }
+    if args.language:
+        # This is only relevant for Whisper. For Transformers,
+        # you might specify a different approach or ignore it.
+        whisper_options["language"] = args.language
+
+    writer_options = {
+        "max_line_width": 55,
+        "max_line_count": 2,
+        "word_timestamps": False
+    }
+
+    if args.verbose == "True":
+        print("Process diarized blocks")
+
+    
     grouped_segments = []
     current_speaker = None
-    current_start = None
-    current_end = None
+    current_start   = None
+    current_end     = None
 
     for turn, _, speaker in diarization.itertracks(yield_label=True):
         if args.verbose=="True":
             print(speaker)
-        if turn.end - turn.start < 0.5:  # Suppress short utterances (pyannote artifact)
-            if args.verbose=="True":
-                print(f"start={turn.start:.1f}s stop={turn.end:.1f}s IGNORED")
+        if turn.end - turn.start < 0.5:
+            # ignore short utterances
             continue
-
         if speaker == current_speaker:
             current_end = turn.end
         else:
             if current_speaker is not None:
                 grouped_segments.append((current_start, current_end, current_speaker))
             current_speaker = speaker
-            current_start = turn.start
-            current_end = turn.end
+            current_start    = turn.start
+            current_end      = turn.end
 
-    # Append the last segment
     if current_speaker is not None:
         grouped_segments.append((current_start, current_end, current_speaker))
 
@@ -355,13 +536,32 @@ def main(args):
     for start, end, speaker in grouped_segments:
         clip_path = f"/tmp/speaker_{speaker}_start_{start:.1f}_end_{end:.1f}.wav"
         clip_audio(args.input_file, sample_rate, start, end, clip_path)
-        result = model.transcribe(start=start, end=end, options=whisper_options)
-        language = result['language']
+        
+        # Important: we call asr_model instead of model
+        result = asr_model.transcribe(start=start, end=end, options=whisper_options)
+        language = result.get('language', args.language or 'unknown')
+        
         if args.verbose=="True":
             print(f"start={start:.1f}s stop={end:.1f}s lang={language} {speaker}")
+
+        # Use your existing logic to write SRT, JSON, etc.
         writer(result, args.output_file, speaker, start, writer_options)
-        writer_json(generate_segments(result['segments'],  speaker, language), args.output_json_file)
+        writer_json(generate_segments(result['segments'], speaker, language), args.output_json_file)
+
     writer_json.finalize()
+
+    # If you want to validate JSON, paragraphs, PDF creation, etc.
+    paragraphsCreator.process_paragraphs(
+        args.output_json_file,
+        args.output_paragraphs_json_file,
+        3
+    )
+    createpdf.convert_json_to_pdf(
+        args.output_paragraphs_json_file,
+        args.output_md_file,
+        args.output_pdf_file
+    )
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Diarization and Whisper Transcription CLI")
@@ -372,7 +572,10 @@ if __name__ == '__main__':
     parser.add_argument('--language', type=str, required=False, help="Language to use for transcription or translation")
     parser.add_argument('--input-file', type=str, required=True, help="Input audio file")
     parser.add_argument('--output-file', type=str, required=True, help="Output file for the results (SRT or VTT)")
-    parser.add_argument('--output-json-file', type=str, required=True, help="Output file for the results (SRT or VTT)")
+    parser.add_argument('--output-json-file', type=str, required=True, help="Output json file.")
+    parser.add_argument('--output-paragraphs-json-file', type=str, required=True, help="Output paragraphs file")
+    parser.add_argument('--output-md-file', type=str, required=True, help="Output markdown file")
+    parser.add_argument('--output-pdf-file', type=str, required=True, help="Output pdf file")
     parser.add_argument('--verbose', type=str, required=False, help="Printing status")
 
     args = parser.parse_args()

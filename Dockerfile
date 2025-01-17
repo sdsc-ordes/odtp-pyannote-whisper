@@ -1,6 +1,10 @@
 FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
 
-RUN apt-get update && apt-get install -y apt-utils
+# Set environment variable to avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Weasyprint is necessary for pdf printing
+RUN apt-get update && apt-get install -y apt-utils weasyprint 
 
 RUN apt-get install -y python3.11 python3.11-venv python3-pip
 
@@ -66,7 +70,4 @@ RUN sed -i 's/\r$//' /odtp/odtp-component-client/odtp-app.sh
 RUN sed -i 's/\r$//' /odtp/odtp-component-client/startup.sh
 RUN sed -i 's/\r$//' /odtp/odtp-app/app.sh
 
-#ENTRYPOINT ["bash", "/odtp/odtp-component-client/startup.sh"]
-ENTRYPOINT [ "python3", "/odtp/odtp-app/gradio_app.py" ]
-
-# Create command to run the app that goes to an entrypoint basically the startup mode. Also I in order to work with an API I need some interface with an s3 to make it work?
+ENTRYPOINT ["bash", "/odtp/odtp-component-client/startup.sh"]

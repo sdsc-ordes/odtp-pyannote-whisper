@@ -22,7 +22,7 @@ def cleanup_temp(temp_dir):
     """Remove temporary folder structure"""
     shutil.rmtree(temp_dir)
 
-def process_audio(audio_file, model, task, language, hf_token):
+def process_audio(audio_file, model, task, language, hf_token=None):
     """Process audio file with Whisper and Pyannote"""
     # Create temp structure
     temp_dir = create_temp_structure()
@@ -97,7 +97,7 @@ with gr.Blocks() as demo:
                 label="Upload Audio File (WAV format)"
             )
             model = gr.Dropdown(
-                choices=["tiny", "base", "small", "medium", "large", "large-v2"],
+                choices=["tiny", "base", "small", "medium", "large", "large-v2", "large-v3", "large-v3-turbo", "softcatala/whisper-base-ca", "projecte-aina/whisper-large-v3-ca-3catparla"],
                 value="base",
                 label="Whisper Model"
             )
@@ -107,13 +107,14 @@ with gr.Blocks() as demo:
                 label="Task"
             )
             language = gr.Dropdown(
-                choices=["auto", "en", "es", "fr", "de", "it", "pt", "nl", "ja", "zh", "ru"],
+                choices=["auto", "en", "es", "ca", "fr", "de", "it", "pt", "nl", "ja", "zh", "ru"],
                 value="auto",
                 label="Source Language"
             )
             hf_token = gr.Textbox(
                 label="Hugging Face Token",
-                type="password"
+                type="password",
+                placeholder="Leave blank if not applicable"
             )
             submit_btn = gr.Button("Process Audio")
             
@@ -145,15 +146,17 @@ with gr.Blocks() as demo:
         outputs=[information, srt_output, json_output, srt_download, json_download]
     )
 
+import argparse
+
 if __name__ == "__main__":
-    demo.launch(
+    parser = argparse.ArgumentParser(description="Launch Gradio app with optional sharing.")
+    parser.add_argument('--share', action='store_true', help="Enable sharing the app with a public URL.")
+    args = parser.parse_args()
+
+    demo.queue().launch(
         server_name="0.0.0.0",  # More secure default for development
         server_port=7860,         # Default Gradio port
-        share=False,              # Disable temporary public URL
+        share=args.share,              # Disable temporary public URL
         show_error=True,          # Show detailed error messages
         debug=True               # Enable debug mode for development
     )
-
-
-
-# TODO: Slow printing on the command.
