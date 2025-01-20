@@ -28,6 +28,8 @@ import paragraphsCreator
 from pydub import AudioSegment
 import yt_dlp
 
+from slugify import slugify
+import uuid
 
 
 
@@ -59,8 +61,8 @@ class WhisperFacade(ASRFacade):
     def __init__(self, model: str, *, quantize=False) -> None:
         print("Initialize Whisper")
         whisper_model = whisper.load_model(model)
-        if quantize:
-            print("Quantize")
+        if quantize == True:
+            print("Quantize active")
             DTYPE = torch.qint8
             qmodel: Whisper = torch.quantization.quantize_dynamic(
                 whisper_model, {torch.nn.Linear}, dtype=DTYPE
@@ -68,6 +70,7 @@ class WhisperFacade(ASRFacade):
             del whisper_model
             self.wmodel = qmodel
         else:
+            print("Quantize non active")
             self.wmodel = whisper_model
 
     def load_audio(self, file_path: str):
@@ -451,7 +454,8 @@ def convert_mpx_to_wav(file_path):
 def download_youtube_video(url, output_path='/tmp'):
     ydl_opts = {
         'format': 'bestaudio/best',
-        'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
+        #'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
+        'outtmpl': os.path.join(output_path, f"{str(uuid.uuid4())}.%(ext)s"),
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'wav',
@@ -465,28 +469,29 @@ def download_youtube_video(url, output_path='/tmp'):
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info_dict = ydl.extract_info(url, download=True)
         output_file = ydl.prepare_filename(info_dict)
-
+        print(output_file)
         base, ext = os.path.splitext(output_file)
+        
         new_file = base + '.wav'
-        print(new_file)
         return new_file
 
 
 
 def main(args):
-    # Really dirty way to handle youtube links
-    # We should refactor this to be more robust
-    # with different input sources
-    possible_link = args.input_file.replace("/odtp/odtp-input/", "")  
-    if possible_link.startswith('http://') or possible_link.startswith('https://'):
-        file_path = download_youtube_video(possible_link, output_path=os.path.dirname(args.output_file))
+    # TODO: Take out the file_path from ODTP here
+    if args.input_file.startswith('http://') or args.input_file.startswith('https://'):
+        file_path = download_youtube_video(args.input_file, output_path=os.path.dirname(args.output_file))
+        base_slug = slugify(file_path, separator='_')
         #file_path = convert_mpx_to_wav(file_path)
     elif args.input_file.lower().endswith('.mp3'):
         file_path = convert_mpx_to_wav(args.input_file)
+        file_path = "/odtp/odtp-input/" + file_path
     elif args.input_file.lower().endswith('.wav'):
         file_path = args.input_file
+        file_path = "/odtp/odtp-input/" + file_path
     elif args.input_file.lower().endswith('.mp4'):
         file_path = convert_mpx_to_wav(args.input_file)
+        file_path = "/odtp/odtp-input/" + file_path
     else:
         raise ValueError("Input file must be an MP3, WAV or MP4 file")
     
@@ -517,7 +522,7 @@ def main(args):
         "word_timestamps": False
     }
 
-    if args.verbose == "True":
+    if args.verbose:
         print("Process diarized blocks")
 
     
@@ -527,7 +532,7 @@ def main(args):
     current_end     = None
 
     for turn, _, speaker in diarization.itertracks(yield_label=True):
-        if args.verbose=="True":
+        if args.verbose:
             print(speaker)
         if turn.end - turn.start < 0.5:
             # ignore short utterances
@@ -553,7 +558,7 @@ def main(args):
         result = asr_model.transcribe(start=start, end=end, options=whisper_options)
         language = result.get('language', args.language or 'unknown')
         
-        if args.verbose=="True":
+        if args.verbose:
             print(f"start={start:.1f}s stop={end:.1f}s lang={language} {speaker}")
 
         # Use your existing logic to write SRT, JSON, etc.
@@ -588,7 +593,7 @@ if __name__ == '__main__':
     parser.add_argument('--output-paragraphs-json-file', type=str, required=True, help="Output paragraphs file")
     parser.add_argument('--output-md-file', type=str, required=True, help="Output markdown file")
     parser.add_argument('--output-pdf-file', type=str, required=True, help="Output pdf file")
-    parser.add_argument('--verbose', type=str, required=False, help="Printing status")
+    parser.add_argument('--verbose', action='store_true', help="Printing status")
 
     args = parser.parse_args()
     main(args)
