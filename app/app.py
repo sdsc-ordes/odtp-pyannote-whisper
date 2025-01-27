@@ -320,6 +320,7 @@ class WriteSRTIncremental(AppendResultsMixin, WriteSRT):
             start = self.format_timestamp(segment['start'])
             end = self.format_timestamp(segment['end'])
             text = f"[{speaker}]: {segment['text']}"
+            # TODO: Add verbose option to print the SRT blocks
             print(f"{self.srt_index}\n{start} --> {end}\n{text}\n", file=file, flush=True)
             self.srt_index += 1  
 
@@ -371,6 +372,7 @@ class SegmentsJSONWriter(AppendResultsMixin):
         self.output_dir = output_dir  # Now optional
         self.first_call = True
         self.output_path = ''  # Will store the output file path
+        self.temp_output_path = ''  # Will store the temporary output file path
 
     def __call__(
         self,
@@ -383,39 +385,76 @@ class SegmentsJSONWriter(AppendResultsMixin):
             path = output_path
             mode = 'a' if os.path.exists(path) else 'w'
             self.output_path = path
+            self.temp_output_path = os.path.splitext(path)[0] + ".jsonl"
         else:
             if not self.output_path:
                 audio_basename = os.path.splitext(os.path.basename(audio_path))[0]
                 # Use output_dir if provided, else use the directory of audio_path
                 dir = self.output_dir if self.output_dir else os.path.dirname(audio_path)
                 self.output_path = os.path.join(dir, audio_basename + ".json")
+                self.temp_output_path = os.path.join(dir, audio_basename + ".jsonl")
+
             path = self.output_path
             mode = 'a' if not self.first_call else 'w'
 
-        with open(path, mode, encoding='utf-8') as f:
-            if self.first_call:
-                # Start the JSON structure
-                f.write('{"segments": [\n')
-            else:
-                f.write(',\n')
-            for idx, segment in enumerate(segments):
-                if segment:  # Check if the segment is not empty
-                    if idx > 0:
-                        f.write(',\n')
 
-                    segment.text = segment.text.strip()
-                    json.dump(asdict(segment), f, ensure_ascii=False, indent=2)
+        if len(segments) > 0 and all(hasattr(segment, 'text') for segment in segments): 
+            with open(self.temp_output_path, mode, encoding='utf-8') as f:
+                    for idx, segment in enumerate(segments):
+                        segment.text = segment.text.strip()
+                        json.dump(asdict(segment), f, ensure_ascii=False)
+                        f.write('\n')
+            self.first_call = False
+
+        # with open(path, mode, encoding='utf-8') as f:
+        #     if self.first_call:
+        #         # Start the JSON structure
+        #         f.write('{"segments": [\n')
+        #     else:
+        #         f.write(',\n')
+        #     for idx, segment in enumerate(segments):
+        #         if segment:  # Check if the segment is not empty
+        #             if idx > 0:
+        #                 f.write(',\n')
+
+        #             segment.text = segment.text.strip()
+        #             json.dump(asdict(segment), f, ensure_ascii=False, indent=2)
+
             self.first_call = False
 
     def finalize(self):
         """Call this method after all segments have been written to close the JSON array."""
-        if self.output_path:
-            with open(self.output_path, 'a', encoding='utf-8') as f:
-                f.write('\n  ]\n}\n')
+        if self.temp_output_path:
+            dict = {"segments": []}
+            with open(self.temp_output_path, 'r', encoding='utf-8') as temp_file:
+                for line in temp_file:
+                    segments = json.loads(line.strip())
+                    dict["segments"].append(segments)
 
-    def close(self):
-        with open(self.output_path, 'a', encoding='utf-8') as f:
-            f.write('\n]}\n')
+        # if self.output_path:
+        #     with open(self.output_path, 'a', encoding='utf-8') as f:
+        #         f.write('\n  ]\n}\n')
+
+        # This is a quick solution to the error that occurs with empty items in the list ..},,{...
+        # However, it's not the best solution. It's better to find and fix the root cause of the issue.
+        # One strategy would be read the json file, and append the segments to the list, then write it back.
+        # with open(self.output_path, 'r', encoding='utf-8') as file:
+        #     content = file.read()
+        
+        # # Remove extra commas
+        # fixed_content = content.replace(',\n,', ',\n')
+        # fixed_content = content.replace(',\n,\n,', ',\n')
+        # fixed_content = content.replace(',\n,\n,\n,', ',\n')
+        
+        # # Load the JSON to ensure it's valid
+        # try:
+        #     json_data = json.loads(fixed_content)
+        # except json.JSONDecodeError as e:
+        #     raise f"Error decoding JSON: {e}"
+        
+        # Write the fixed JSON back to the file
+        with open(self.output_path, 'w', encoding='utf-8') as file:
+            json.dump(dict, file, ensure_ascii=False, indent=2)
 
 def clip_audio(audio_file_path, sample_rate, start, end, output_path):
     # Ensure the output directory exists
@@ -437,7 +476,7 @@ def convert_mpx_to_wav(file_path):
         audio = AudioSegment.from_mp3(file_path)
 
     elif file_path.lower().endswith('.mp4'):
-        audio = AudioSegment.from_mp4(file_path)
+        audio = AudioSegment.from_file(file_path, format="mp4")
 
     else:
         raise ValueError("Input file must be an MP3 or MP4 file")
@@ -451,11 +490,11 @@ def convert_mpx_to_wav(file_path):
     return wav_file_path
 
     
-def download_youtube_video(url, output_path='/tmp'):
+def download_youtube_video(url, filename, output_path='/tmp'):
     ydl_opts = {
         'format': 'bestaudio/best',
         #'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
-        'outtmpl': os.path.join(output_path, f"{str(uuid.uuid4())}.%(ext)s"),
+        'outtmpl': os.path.join(output_path, f"{filename.split('.')[0]}.%(ext)s"),
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'wav',
@@ -475,25 +514,111 @@ def download_youtube_video(url, output_path='/tmp'):
         new_file = base + '.wav'
         return new_file
 
+import subprocess
+
+def convert_video_to_wav(input_file, output_file):
+    """
+    Convert a .rm file to .wav using FFmpeg.
+    
+    :param input_file: Path to the input .rm file
+    :param output_file: Desired path to the output .wav file
+    """
+    # Ensure the output directory exists (optional)
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    
+    # Build the FFmpeg command
+    # -i input_file  : input file
+    # -vn            : ignore video (if any)
+    # -acodec pcm_s16le: use 16-bit PCM audio codec
+    # -ar 44100      : set sample rate to 44100 Hz
+    # -ac 2          : set audio channels to stereo
+    command = [
+        "ffmpeg",
+        "-y",             # overwrite output file if it exists (optional)
+        "-i", input_file,
+        "-vn",
+        "-acodec", "pcm_s16le",
+        "-ar", "44100",
+        "-ac", "2",
+        output_file
+    ]
+    
+    # Run the command
+    try:
+        subprocess.run(command, check=True)
+        print(f"Conversion successful! '{input_file}' has been converted to '{output_file}'.")
+    except subprocess.CalledProcessError as e:
+        print(f"Error during conversion: {e}")
+
+
+######################## Parallel
+# import multiprocessing
+# import tempfile
+
+# def process_segment(segment, file_path, sample_rate, whisper_options, asr_model, args, writer, writer_options):
+#     start, end, speaker = segment
+#     clip_path = f"/tmp/speaker_{speaker}_start_{start:.1f}_end_{end:.1f}.wav"
+#     clip_audio(file_path, sample_rate, start, end, clip_path)
+    
+#     result = asr_model.transcribe(start=start, end=end, options=whisper_options)
+#     language = result.get('language', args.language or 'unknown')
+    
+#     if args.verbose:
+#         print(f"start={start:.1f}s stop={end:.1f}s lang={language} {speaker}")
+    
+#     return {
+#         'result': result,
+#         'speaker': speaker,
+#         'start': start,
+#         'language': language
+#     }
+
+# def chunkify(lst, n):
+#     for i in range(0, len(lst), n):
+#         yield lst[i:i + n]
+
+# def process_chunk(chunk, file_path, sample_rate, whisper_options, asr_model, args, writer, writer_options):
+#     results = []
+#     for segment in chunk:
+#         result = process_segment(segment, file_path, sample_rate, whisper_options, asr_model, args, writer, writer_options)
+#         results.append(result)
+    
+#     temp_file = tempfile.mktemp(suffix='.json')
+#     with open(temp_file, 'w') as f:
+#         json.dump(results, f)
+    
+#     return temp_file
+
+########################
 
 
 def main(args):
     # TODO: Take out the file_path from ODTP here
     if args.input_file.startswith('http://') or args.input_file.startswith('https://'):
-        file_path = download_youtube_video(args.input_file, output_path=os.path.dirname(args.output_file))
+        file_path = download_youtube_video(args.input_file, filename=os.path.basename(args.output_file) , output_path=os.path.dirname(args.output_file))
         base_slug = slugify(file_path, separator='_')
         #file_path = convert_mpx_to_wav(file_path)
     elif args.input_file.lower().endswith('.mp3'):
         file_path = convert_mpx_to_wav(args.input_file)
-        file_path = "/odtp/odtp-input/" + file_path
+        #file_path = "/odtp/odtp-input/" + file_path
     elif args.input_file.lower().endswith('.wav'):
         file_path = args.input_file
-        file_path = "/odtp/odtp-input/" + file_path
+        #file_path = "/odtp/odtp-input/" + file_path
     elif args.input_file.lower().endswith('.mp4'):
         file_path = convert_mpx_to_wav(args.input_file)
-        file_path = "/odtp/odtp-input/" + file_path
+        #file_path = "/odtp/odtp-input/" + file_path
+    elif args.input_file.lower().endswith('.rm'):
+        file_path = "/odtp/odtp-output/" + os.path.basename(args.input_file).replace('.rm', '.wav')
+        convert_video_to_wav(args.input_file, file_path)
+    elif args.input_file.lower().endswith('.f4v'):
+        file_path = "/odtp/odtp-output/" + os.path.basename(args.input_file).replace('.f4v', '.wav')
+        convert_video_to_wav(args.input_file, file_path)
+    elif args.input_file.lower().endswith('.mkv'):
+        file_path = "/odtp/odtp-output/" + os.path.basename(args.input_file).replace('.mkv', '.wav')
+        convert_video_to_wav(args.input_file, file_path)
     else:
-        raise ValueError("Input file must be an MP3, WAV or MP4 file")
+        raise ValueError("Input file must be an MP3, WAV, RM, F4V, MKV, Youtube Link, or MP4 file")
+    
     
     diarization, _, sample_rate = diarize_audio(args.hf_token, file_path)
 
@@ -566,6 +691,25 @@ def main(args):
         writer_json(generate_segments(result['segments'], speaker, language), args.output_json_file)
 
     writer_json.finalize()
+    # Parallel testing
+    # chunk_size = 2 #args.chunk_size  # Assume chunk_size is passed as an argument
+    # temp_files = []
+
+    # with multiprocessing.Pool() as pool:
+    #     chunks = list(chunkify(grouped_segments, chunk_size))
+    #     results = [pool.apply_async(process_chunk, (chunk, file_path, sample_rate, whisper_options, asr_model, args, writer, writer_options)) for chunk in chunks]
+        
+    #     for result in results:
+    #         temp_file = result.get()
+    #         temp_files.append(temp_file)
+    
+    # for temp_file in temp_files:
+    #     with open(temp_file, 'r') as f:
+    #         results = json.load(f)
+    #         for result in results:
+    #             writer(result['result'], args.output_file, result['speaker'], result['start'], writer_options)
+    #             writer_json(generate_segments(result['result']['segments'], result['speaker'], result['language']), args.output_json_file)
+    #     os.remove(temp_file)
 
     # If you want to validate JSON, paragraphs, PDF creation, etc.
     paragraphsCreator.process_paragraphs(
@@ -581,6 +725,9 @@ def main(args):
 
 
 if __name__ == '__main__':
+    # Multiprocessing requires spawn when working with CUDA
+    #multiprocessing.set_start_method('spawn')
+
     parser = argparse.ArgumentParser(description="Diarization and Whisper Transcription CLI")
     parser.add_argument('--model', type=str, required=True, help="Whisper model to use")
     parser.add_argument('--quantize', action='store_true', help="Whether to quantize the model")
