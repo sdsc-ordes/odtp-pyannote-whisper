@@ -1,4 +1,6 @@
-# Name of the component
+# odtp-pyannote-whisper
+
+This component is still under development. 
 
 Add here your badges:
 [![Launch in your ODTP](https://img.shields.io/badge/Launch%20in%20your-ODTP-blue?logo=launch)](http://localhost:8501/launch-component)
