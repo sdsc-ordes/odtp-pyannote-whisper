@@ -79,7 +79,7 @@ def process_audio(audio_file,
         "--output-paragraphs-json-file", output_paragraphs_json,
         "--output-md-file", output_md_file,
         "--output-pdf-file", output_pdf_file,
-        "--verbose", "False"
+        #"--verbose",
     ]
 
     if quantize:
