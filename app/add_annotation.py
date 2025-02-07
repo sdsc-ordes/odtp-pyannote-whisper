@@ -8,6 +8,10 @@
 # python3 addAnnotation.py /odtp/odtp-output/HRC_20220929T0000-transcription_original.json /odtp/odtp-input/HRC_20220929T0000-initial.json /odtp/odtp-output/HRC_20220929T0000.json --type audio_transcription --origin_channel original --id transcription_original
 # python3 addAnnotation.py /odtp/odtp-output/HRC_20220929T0000-translation_original_english.json /odtp/odtp-output/HRC_20220929T0000.json /odtp/odtp-output/HRC_20220929T0000.json --type audio_translation --origin_channel original --id translation_original_english
 
+# python3 add_annotation.py /odtp/odtp-output/HRC_20221010T1000-transcription_original.json /odtp/odtp-input/HRC_20221010T1000-initial.json /odtp/odtp-output/HRC_20221010T1000.json --type audio_transcription --origin_channel original --id transcription_original
+# python3 add_annotation.py /odtp/odtp-output/HRC_20221010T1000-translation_original_english.json /odtp/odtp-output/HRC_20221010T1000.json /odtp/odtp-output/HRC_20221010T1000.json --type audio_translation --origin_channel original --id translation_original_english
+
+
 import json
 import argparse
 from datetime import timedelta
