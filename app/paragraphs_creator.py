@@ -54,14 +54,14 @@ def create_paragraphs(annotations, min_gap=4):
     return paragraphs
 
 def process_paragraphs(input_file, output_file, min_gap):
-    with open(input_file, 'r') as f:
+    with open(input_file, 'r', encoding="utf-8") as f:
         json_data = json.load(f)
 
     annotations = json_data["segments"]
 
     result = create_paragraphs(annotations, min_gap)
 
-    with open(output_file, 'w') as f:
+    with open(output_file, 'w', encoding="utf-8") as f:
         json.dump(result, f, indent=4)
 
 def main():
