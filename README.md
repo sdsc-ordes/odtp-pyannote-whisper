@@ -59,7 +59,7 @@ This component can be run directly with Docker, however it is designed to be run
 ``` bash
 odtp new odtp-component-entry \
 --name odtp-pyannote-whisper \
---component-version v0.1.0 \
+--component-version v0.1.1 \
 --repository https://github.com/sdsc-ordes/odtp-pyannote-whisper 
 ```
 
