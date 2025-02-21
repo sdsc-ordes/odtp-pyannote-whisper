@@ -22,14 +22,15 @@ import json
 from dataclasses import dataclass, asdict
 from jsonschema import validate, ValidationError
 
-import createpdf
-import paragraphsCreator
+import create_pdf
+import paragraphs_creator
 
 from pydub import AudioSegment
 import yt_dlp
 
 from slugify import slugify
 import uuid
+import yaml
 
 
 
@@ -470,7 +471,7 @@ def clip_audio(audio_file_path, sample_rate, start, end, output_path):
     # Write the audio segment to the output path
     sf.write(output_path, waveform[start_sample:end_sample], sr, format='WAV')
 
-def convert_mpx_to_wav(file_path):
+def convert_mpx_to_wav(file_path, output_path):
     if file_path.lower().endswith('.mp3'):
         # Load the MP3 file
         audio = AudioSegment.from_mp3(file_path)
@@ -482,12 +483,12 @@ def convert_mpx_to_wav(file_path):
         raise ValueError("Input file must be an MP3 or MP4 file")
         
     # Define the output path
-    wav_file_path = os.path.splitext(file_path)[0] + '.wav'
+    #wav_file_path = os.path.splitext(file_path)[0] + '.wav'
     
     # Export as WAV
-    audio.export(wav_file_path, format='wav')
+    audio.export(output_path, format='wav')
     
-    return wav_file_path
+    return output_path
 
     
 def download_youtube_video(url, filename, output_path='/tmp'):
@@ -502,6 +503,8 @@ def download_youtube_video(url, filename, output_path='/tmp'):
         }],
     }
 
+
+
     if not os.path.exists(output_path):
         os.makedirs(output_path)
 
@@ -511,10 +514,11 @@ def download_youtube_video(url, filename, output_path='/tmp'):
         print(output_file)
         base, ext = os.path.splitext(output_file)
         
-        new_file = base + '.wav'
+        new_file = base + '-original.wav'
         return new_file
 
 import subprocess
+import shutil
 
 def convert_video_to_wav(input_file, output_file):
     """
@@ -551,73 +555,31 @@ def convert_video_to_wav(input_file, output_file):
         print(f"Error during conversion: {e}")
 
 
-######################## Parallel
-# import multiprocessing
-# import tempfile
-
-# def process_segment(segment, file_path, sample_rate, whisper_options, asr_model, args, writer, writer_options):
-#     start, end, speaker = segment
-#     clip_path = f"/tmp/speaker_{speaker}_start_{start:.1f}_end_{end:.1f}.wav"
-#     clip_audio(file_path, sample_rate, start, end, clip_path)
-    
-#     result = asr_model.transcribe(start=start, end=end, options=whisper_options)
-#     language = result.get('language', args.language or 'unknown')
-    
-#     if args.verbose:
-#         print(f"start={start:.1f}s stop={end:.1f}s lang={language} {speaker}")
-    
-#     return {
-#         'result': result,
-#         'speaker': speaker,
-#         'start': start,
-#         'language': language
-#     }
-
-# def chunkify(lst, n):
-#     for i in range(0, len(lst), n):
-#         yield lst[i:i + n]
-
-# def process_chunk(chunk, file_path, sample_rate, whisper_options, asr_model, args, writer, writer_options):
-#     results = []
-#     for segment in chunk:
-#         result = process_segment(segment, file_path, sample_rate, whisper_options, asr_model, args, writer, writer_options)
-#         results.append(result)
-    
-#     temp_file = tempfile.mktemp(suffix='.json')
-#     with open(temp_file, 'w') as f:
-#         json.dump(results, f)
-    
-#     return temp_file
-
-########################
-
-
 def main(args):
     # TODO: Take out the file_path from ODTP here
-    if args.input_file.startswith('http://') or args.input_file.startswith('https://'):
-        file_path = download_youtube_video(args.input_file, filename=os.path.basename(args.output_file) , output_path=os.path.dirname(args.output_file))
+    if args.input_file.startswith('/odtp/odtp-input/http://') or args.input_file.startswith('/odtp/odtp-input/https://'):
+        file_path = download_youtube_video(args.input_file.replace("/odtp/odtp-input/",""), filename=os.path.basename(args.output_file) , output_path=os.path.dirname(args.output_file))
         base_slug = slugify(file_path, separator='_')
-        #file_path = convert_mpx_to_wav(file_path)
     elif args.input_file.lower().endswith('.mp3'):
         file_path = convert_mpx_to_wav(args.input_file)
-        #file_path = "/odtp/odtp-input/" + file_path
+        shutil.copy(file_path, os.path.join("/odtp/odtp-output", os.path.basename(file_path).replace('.wav', '-original.mp3')))
     elif args.input_file.lower().endswith('.wav'):
         file_path = args.input_file
-        #file_path = "/odtp/odtp-input/" + file_path
+        shutil.copy(file_path, os.path.join("/odtp/odtp-output", os.path.basename(file_path).replace('.wav', '-original.wav')))
     elif args.input_file.lower().endswith('.mp4'):
-        file_path = convert_mpx_to_wav(args.input_file)
-        #file_path = "/odtp/odtp-input/" + file_path
+        file_path = "/odtp/odtp-output/" + os.path.basename(args.input_file).replace('.mp4', '-original.wav')
+        convert_mpx_to_wav(args.input_file, file_path)
     elif args.input_file.lower().endswith('.rm'):
-        file_path = "/odtp/odtp-output/" + os.path.basename(args.input_file).replace('.rm', '.wav')
+        file_path = "/odtp/odtp-output/" + os.path.basename(args.input_file).replace('.rm', '-original.wav')
         convert_video_to_wav(args.input_file, file_path)
     elif args.input_file.lower().endswith('.f4v'):
-        file_path = "/odtp/odtp-output/" + os.path.basename(args.input_file).replace('.f4v', '.wav')
+        file_path = "/odtp/odtp-output/" + os.path.basename(args.input_file).replace('.f4v', '-original.wav')
         convert_video_to_wav(args.input_file, file_path)
     elif args.input_file.lower().endswith('.mkv'):
-        file_path = "/odtp/odtp-output/" + os.path.basename(args.input_file).replace('.mkv', '.wav')
+        file_path = "/odtp/odtp-output/" + os.path.basename(args.input_file).replace('.mkv', '-original.wav')
         convert_video_to_wav(args.input_file, file_path)
     else:
-        raise ValueError("Input file must be an MP3, WAV, RM, F4V, MKV, Youtube Link, or MP4 file")
+        raise ValueError(f"Input file must be an MP3, WAV, RM, F4V, MKV, Youtube Link, or MP4 file. Input file: {args.input_file}")
     
     
     diarization, _, sample_rate = diarize_audio(args.hf_token, file_path)
@@ -691,37 +653,19 @@ def main(args):
         writer_json(generate_segments(result['segments'], speaker, language), args.output_json_file)
 
     writer_json.finalize()
-    # Parallel testing
-    # chunk_size = 2 #args.chunk_size  # Assume chunk_size is passed as an argument
-    # temp_files = []
-
-    # with multiprocessing.Pool() as pool:
-    #     chunks = list(chunkify(grouped_segments, chunk_size))
-    #     results = [pool.apply_async(process_chunk, (chunk, file_path, sample_rate, whisper_options, asr_model, args, writer, writer_options)) for chunk in chunks]
-        
-    #     for result in results:
-    #         temp_file = result.get()
-    #         temp_files.append(temp_file)
-    
-    # for temp_file in temp_files:
-    #     with open(temp_file, 'r') as f:
-    #         results = json.load(f)
-    #         for result in results:
-    #             writer(result['result'], args.output_file, result['speaker'], result['start'], writer_options)
-    #             writer_json(generate_segments(result['result']['segments'], result['speaker'], result['language']), args.output_json_file)
-    #     os.remove(temp_file)
 
     # If you want to validate JSON, paragraphs, PDF creation, etc.
-    paragraphsCreator.process_paragraphs(
+    paragraphs_creator.process_paragraphs(
         args.output_json_file,
         args.output_paragraphs_json_file,
         3
     )
-    createpdf.convert_json_to_pdf(
+    create_pdf.convert_json_to_pdf(
         args.output_paragraphs_json_file,
         args.output_md_file,
         args.output_pdf_file
     )
+
 
 
 if __name__ == '__main__':

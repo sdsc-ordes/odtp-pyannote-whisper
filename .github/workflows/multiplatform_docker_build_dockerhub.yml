@@ -1,0 +1,56 @@
+name: Multi-Platform Docker Build for Dockerhub
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out the repository and submodules
+      - name: Check out code
+        uses: actions/checkout@v3
+        with:
+          submodules: true  # Fetch submodules
+          fetch-depth: 0    # Ensure the full history is fetched
+
+      # Step 2: Set up Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      # Step 3: Install yq
+      - name: Install yq
+        run: |
+          sudo apt-get update && sudo apt-get install -y wget
+          sudo wget https://github.com/mikefarah/yq/releases/download/v4.35.1/yq_linux_amd64 -O /usr/bin/yq
+          sudo chmod +x /usr/bin/yq
+
+      # Step 4: Extract component-version and component-name from odtp.yml
+      - name: Extract component-version and component-name
+        id: extract_info
+        run: |
+          VERSION=$(yq e '.component-version' odtp.yml)
+          NAME=$(yq e '.component-name' odtp.yml)
+          echo "VERSION=${VERSION}"
+          echo "NAME=${NAME}"
+          echo "COMPONENT_VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "COMPONENT_NAME=${NAME}" >> $GITHUB_ENV
+
+      # Step 5: Log in to Docker Hub
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Step 6: Build and push Docker image for multiple platforms
+      - name: Build and push Docker image
+        run: |
+          IMAGE_NAME=${{ secrets.DOCKER_USERNAME }}/${{ env.COMPONENT_NAME }}
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg COMPONENT_VERSION=${{ env.COMPONENT_VERSION }} \
+            -t $IMAGE_NAME:${{ env.COMPONENT_VERSION }} \
+            -t $IMAGE_NAME:latest \
+            --push .

@@ -3,8 +3,8 @@ schema-version: "v0.5.0"
 
 # Component Information
 component-name: odtp-pyannote-whisper
-component-version: "v0.0.1"
-component-license: AGPL 3.0
+component-version: "v0.1.0"
+component-license: Apache 2.0
 component-type: ephemeral
 component-description: Transcribe or translate audio files using Whisper and Pyannote for speaker diarization
 component-authors:
@@ -121,6 +121,30 @@ data-outputs:
     type: .json
     path: /odtp/odtp-output
     description: Transcription/translation output in JSON format with speaker diarization
+    naming-convention: null
+
+  - name: OUTPUT_AUDIO_FILE
+    type: .wav
+    path: /odtp/odtp-output
+    description: Audio in wav format
+    naming-convention: null
+
+  - name: OUTPUT_PARAGRAPHS_FILE
+    type: .json
+    path: /odtp/odtp-output
+    description: Markdown file with the paragraphs containing speaker diarization and transcription/translation
+    naming-convention: null
+
+  - name: OUTPUT_MD_FILE
+    type: .md
+    path: /odtp/odtp-output
+    description: Markdown file with the speaker diarization and transcription/translation
+    naming-convention: null
+
+  - name: OUTPUT_PDF_FILE
+    type: .pdf
+    path: /odtp/odtp-output
+    description: PDF file with the speaker diarization and transcription/translation
     naming-convention: null
 
 # Validation Schemas (Future Development)

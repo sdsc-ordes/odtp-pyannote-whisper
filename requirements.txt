@@ -10,5 +10,7 @@ gradio==5.5.0
 numpy==1.24.4
 md2pdf==1.0.1
 transformers==4.48.0
-yt-dlp
+yt-dlp==2025.1.26
 python-slugify
+pyyaml
+boto3
