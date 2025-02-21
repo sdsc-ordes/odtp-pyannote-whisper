@@ -1,3 +1,9 @@
+---
+title: odtp-pyannote-whisper
+sdk: docker
+pinned: false
+---
+
 # odtp-pyannote-whisper
 
 [![Compatible with ODTP v0.5.x](https://img.shields.io/badge/Compatible%20with-ODTP%20v0.5.0-green)]("") [![Open in Spaces](https://huggingface.co/datasets/huggingface/badges/resolve/main/open-in-hf-spaces-md.svg)](https://huggingface.com/spaces/katospiegel/odtp-pyannote-whisper)
