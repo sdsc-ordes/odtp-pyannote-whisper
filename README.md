@@ -47,8 +47,6 @@ This token should be provided to the component via the `ENV` variables or by the
 
 ## Tools Information
 
-| Tool | Semantic Versioning | Commit | Documentation |
-| --- | --- | --- | --- |
 | Tool                                            | Version    | Commit Hash | Documentation                                                      |
 |-------------------------------------------------|------------|-------------|--------------------------------------------------------------------|
 | [OpenAI Whisper](https://github.com/openai/whisper)          | Latest     | [Commit History](https://github.com/openai/whisper/commits/main) | [Whisper Documentation](https://github.com/openai/whisper#readme)  |
