@@ -182,6 +182,7 @@ After the configuration, you can run:
 
 ``` bash
 docker run -it --rm \
+--platform linux/amd64 \
 -p 7860:7860 \
 --env-file .env \
 odtp-pyannote-whisper 
