@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
 
 RUN apt-get update && apt-get install -y apt-utils
 
@@ -19,7 +19,7 @@ RUN mkdir -p /odtp/odtp-tmp \
 
 
 COPY odtp-component-client/requirements.txt /odtp/odtp-tmp/odtp.requirements.txt
-RUN pip install -r /odtp/odtp-tmp/odtp.requirements.txt
+RUN pip install --no-cache-dir -r /odtp/odtp-tmp/odtp.requirements.txt
 
 #######################################################################
 # PLEASE INSTALL HERE ALL SYSTEM DEPENDENCIES RELATED TO YOUR TOOL
@@ -27,7 +27,7 @@ RUN pip install -r /odtp/odtp-tmp/odtp.requirements.txt
 
 # Installing dependecies from the app
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install -r /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Dependencies
 
