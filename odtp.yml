@@ -3,7 +3,7 @@ schema-version: "v0.5.0"
 
 # Component Information
 component-name: odtp-pyannote-whisper
-component-version: "v0.1.1"
+component-version: "v0.1.2"
 component-license: Apache 2.0
 component-type: ephemeral
 component-description: Transcribe or translate audio files using Whisper and Pyannote for speaker diarization

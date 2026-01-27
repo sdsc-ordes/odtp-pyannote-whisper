@@ -59,7 +59,7 @@ jobs:
       # Step 6: Build and push Docker image for multiple platforms
       - name: Build and push Docker image
         run: |
-          IMAGE_NAME=ghcr.io/${{ github.repository }}/${{ env.COMPONENT_NAME }}
+          IMAGE_NAME=ghcr.io/${{ github.repository }}
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --build-arg COMPONENT_VERSION=${{ env.COMPONENT_VERSION }} \

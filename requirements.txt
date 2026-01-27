@@ -6,7 +6,7 @@ pyannote.audio==3.3.2
 soundfile==0.12.1
 librosa==0.10.2.post1
 jsonschema==4.23.0
-gradio==5.5.0
+gradio==5.50.0
 numpy==1.24.4
 md2pdf==1.0.1
 transformers==4.48.0
